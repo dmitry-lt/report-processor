@@ -4,19 +4,16 @@ import org.junit.jupiter.api.Test;
 import report.processor.FileInfo;
 import report.processor.ReportHandler;
 import report.processor.ReportProcessor;
-import report.processor.impl.ExecutorReportProcessor;
-import report.processor.impl.FileSystemHelper;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.attribute.FileTime;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
+import static java.time.Instant.now;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,36 +24,20 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static report.processor.util.TestUtils.filePath;
+import static report.processor.util.TestUtils.filePathNonXml;
+import static report.processor.util.TestUtils.filePathXML;
+import static report.processor.util.TestUtils.folderPath;
 
 public class ExecutorReportProcessorIntegrationTests {
     private final int handlerTimeoutMillis = 1000;
     private final int terminationTimeoutMillis = 1000;
 
-    private Path folderPath() {
-        return Paths.get("test_folder");
+    private ReportProcessor reportProcessor(FakeFileSystemHelper fileSystemHelper) {
+        return new ExecutorReportProcessor(fileSystemHelper, filePath -> filePath.toString().toLowerCase().endsWith(".xml"), 10);
     }
 
-    private Path filePath(Path folderPath) {
-        return folderPath.resolve(UUID.randomUUID() + ".xml");
-    }
-
-    private Path filePathNonXml(Path folderPath) {
-        return folderPath.resolve(UUID.randomUUID() + ".txt");
-    }
-
-    private Path filePathXML(Path folderPath) {
-        return folderPath.resolve(UUID.randomUUID() + ".XML");
-    }
-
-    private Path filePath(Path folderPath, String fileName) {
-        return folderPath.resolve(fileName + ".xml");
-    }
-
-    private ReportProcessor reportProcessor(FakeFileSystemHelper fileInfoProvider) {
-        return new ExecutorReportProcessor(fileInfoProvider, filePath -> filePath.toString().toLowerCase().endsWith(".xml"), 10);
-    }
-
-    private FakeFileSystemHelper fileInfoProvider() {
+    private FakeFileSystemHelper fileSystemHelper() {
         return new FakeFileSystemHelper();
     }
 
@@ -64,7 +45,7 @@ public class ExecutorReportProcessorIntegrationTests {
         public ArrayList<FileInfo> fileInfos = new ArrayList<>();
 
         @Override
-        public Collection<FileInfo> getFileInfos(Path folder) {
+        public Collection<FileInfo> getFileInfos(Path folder, Predicate<Path> filePathFilter) {
             return fileInfos;
         }
     }
@@ -75,8 +56,8 @@ public class ExecutorReportProcessorIntegrationTests {
         var folderPath = folderPath();
         var filePath = filePath(folderPath);
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
         var handler = mock(ReportHandler.class);
 
         // when
@@ -87,7 +68,7 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML file
-        fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
 
         // then
         // stop
@@ -99,13 +80,43 @@ public class ExecutorReportProcessorIntegrationTests {
     }
 
     @Test
+    public void givenProcessor_whenHandlerRegisteredForMultipleReportTypes_thenHandleFileOnlyOnce() throws InterruptedException {
+        // given
+        var folderPath = folderPath();
+        var filePath = filePath(folderPath);
+        var reportType1 = "reportType1";
+        var reportType2 = "reportType2";
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
+        var handler = mock(ReportHandler.class);
+
+        // when
+        // add folder
+        reportProcessor.addMonitoredFolder(folderPath, reportType1, reportType2);
+        // register handler
+        reportProcessor.registerHandler(handler, reportType1, reportType2);
+        // start
+        reportProcessor.start();
+        // create XML file
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
+
+        // then
+        // stop
+        reportProcessor.shutdown();
+        // verify stopped
+        assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
+        // verify file modified event was handled by the handler exactly once
+        verify(handler).handle(argThat(e -> e.filePath().equals(filePath)));
+    }
+
+    @Test
     public void givenProcessor_whenCreateXMLFile_thenHandleFile() throws InterruptedException {
         // given
         var folderPath = folderPath();
         var filePath = filePathXML(folderPath);
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
         var handler = mock(ReportHandler.class);
 
         // when
@@ -116,7 +127,7 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML file
-        fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
 
         // then
         // stop
@@ -133,8 +144,8 @@ public class ExecutorReportProcessorIntegrationTests {
         var folderPath = folderPath();
         var filePath = filePathNonXml(folderPath);
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
         var handler = mock(ReportHandler.class);
 
         // when
@@ -145,7 +156,7 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML file
-        fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
 
         // then
         // stop
@@ -163,8 +174,8 @@ public class ExecutorReportProcessorIntegrationTests {
         var filePath = filePath(folderPath);
         var filePath2 = filePath(folderPath);
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
         var handler = mock(ReportHandler.class);
         var handler2 = mock(ReportHandler.class);
 
@@ -177,14 +188,14 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML file
-        fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
         // verify file modified event
         verify(handler, timeout(handlerTimeoutMillis)).handle(argThat(e -> e.filePath().equals(filePath)));
         verify(handler2, timeout(handlerTimeoutMillis)).handle(argThat(e -> e.filePath().equals(filePath)));
         // unregister second handler
         reportProcessor.unregisterHandler(handler2);
         // create second XML file
-        fileInfoProvider.fileInfos.add(new FileInfo(filePath2, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+        fileSystemHelper.fileInfos.add(new FileInfo(filePath2, FileTime.from(now()), FileTime.from(now())));
 
         // then
         // stop
@@ -201,8 +212,8 @@ public class ExecutorReportProcessorIntegrationTests {
         // given
         var folderPath = folderPath();
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
 
         // when
         // add folder
@@ -228,7 +239,7 @@ public class ExecutorReportProcessorIntegrationTests {
         int numberOfFiles = 10;
         for (int i = 0; i < numberOfFiles; i++) {
             var filePath = filePath(folderPath, String.valueOf(i));
-            fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+            fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
         }
 
         // finish processing the first file
@@ -237,6 +248,8 @@ public class ExecutorReportProcessorIntegrationTests {
         // then
         // shutdown gracefully
         reportProcessor.shutdown();
+        // verify that not all files have been handled by all handlers yet
+        assertTrue(numberOfFiles > processedFilesCount.get());
         // verify stopped
         assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
         // verify that all files were handled by all handlers
@@ -248,8 +261,8 @@ public class ExecutorReportProcessorIntegrationTests {
         // given
         var folderPath = folderPath();
         var reportType = "reportType";
-        var fileInfoProvider = fileInfoProvider();
-        var reportProcessor = reportProcessor(fileInfoProvider);
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
 
         // when
         // add folder
@@ -275,7 +288,7 @@ public class ExecutorReportProcessorIntegrationTests {
         int numberOfFiles = 10;
         for (int i = 0; i < numberOfFiles; i++) {
             var filePath = filePath(folderPath, String.valueOf(i));
-            fileInfoProvider.fileInfos.add(new FileInfo(filePath, FileTime.from(Instant.now()), FileTime.from(Instant.now())));
+            fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
         }
 
         // finish processing the first file
@@ -284,9 +297,12 @@ public class ExecutorReportProcessorIntegrationTests {
         // then
         // force shutdown
         reportProcessor.shutdownNow();
+        var processFilesCountAfterShutdown = processedFilesCount.get();
+        // verify that not all files were handled by all handlers
+        assertTrue(processFilesCountAfterShutdown < numberOfFiles);
         // verify stopped
         assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
-        // verify that not all files were handled by all handlers
-        assertTrue(processedFilesCount.get() < numberOfFiles);
+        // verify that no files were handled from forced shutdown until termination
+        assertEquals(processFilesCountAfterShutdown, processedFilesCount.get());
     }
 }

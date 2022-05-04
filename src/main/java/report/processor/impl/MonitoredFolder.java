@@ -96,7 +96,7 @@ class MonitoredFolder {
      */
     public Collection<FileInfo> getNewMonitoredChanges(FileSystemHelper fileSystemHelper) {
         var monitoredChanges = new ArrayList<FileInfo>();
-        var newFileInfos = fileSystemHelper.getFileInfos(folderPath);
+        var newFileInfos = fileSystemHelper.getFileInfos(folderPath, filePathFilter);
         var newFileInfosMap = new HashMap<Path, FileInfo>();
         for (var newFileInfo : newFileInfos) {
             if (filePathFilter.test(newFileInfo.filePath())) {

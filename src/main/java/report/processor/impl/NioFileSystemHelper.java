@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.function.Predicate;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
@@ -17,13 +18,14 @@ import java.util.stream.Stream;
 public class NioFileSystemHelper implements FileSystemHelper {
     private static final Logger logger = Logger.getLogger(NioFileSystemHelper.class.getName());
 
-    public Collection<FileInfo> getFileInfos(Path folder) {
+    public Collection<FileInfo> getFileInfos(Path folder, Predicate<Path> filePathFilter) {
         var fileInfos = new ArrayList<FileInfo>();
         try {
             if (Files.exists(folder)) {
                 try (Stream<Path> files = Files.list(folder)) {
                     files
                             .filter(filePath -> !Files.isDirectory(filePath))
+                            .filter(filePathFilter)
                             .forEach(filePath -> {
                                 try {
                                     var attr = Files.readAttributes(filePath, BasicFileAttributes.class);

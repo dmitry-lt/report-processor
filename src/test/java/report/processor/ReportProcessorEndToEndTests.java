@@ -7,20 +7,21 @@ import org.junit.jupiter.api.Test;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static report.processor.util.TestUtils.TEMP_FOLDER;
 import static report.processor.util.TestUtils.createFile;
 import static report.processor.util.TestUtils.createFolder;
 import static report.processor.util.TestUtils.deleteFolder;
+import static report.processor.util.TestUtils.filePath;
+import static report.processor.util.TestUtils.folderPath;
 
 public class ReportProcessorEndToEndTests {
-    private static final Path testFolder = TEMP_FOLDER.resolve(UUID.randomUUID().toString());
+    private static final Path testFolder = folderPath();
 
     @BeforeAll
     public static void setUp() {
@@ -33,18 +34,6 @@ public class ReportProcessorEndToEndTests {
     }
 
     private final int terminationTimeoutMillis = 10_000;
-
-    private Path folderPath() {
-        return testFolder.resolve(UUID.randomUUID().toString());
-    }
-
-    private Path filePath(Path folderPath) {
-        return folderPath.resolve(UUID.randomUUID() + ".xml");
-    }
-
-    private Path filePath(Path folderPath, String fileName) {
-        return folderPath.resolve(fileName + ".xml");
-    }
 
     private String fileContent1() {
         return """
@@ -124,12 +113,12 @@ public class ReportProcessorEndToEndTests {
     }
 
     @Test
-    public void endToEndTest() throws InterruptedException {
+    public void endToEndTest() throws InterruptedException, ExecutionException {
         var executorService = Executors.newCachedThreadPool();
 
         // given
-        var folderPath1 = folderPath();
-        var folderPath2 = folderPath();
+        var folderPath1 = folderPath(testFolder);
+        var folderPath2 = folderPath(testFolder);
         var reportType1 = "reportType1";
         var reportType2 = "reportType2";
         var reportType3 = "reportType3";
@@ -166,7 +155,7 @@ public class ReportProcessorEndToEndTests {
         createFolder(folderPath2);
 
         // create files in folder 1 and stop processing
-        executorService.submit(() -> {
+        var folder1Future = executorService.submit(() -> {
             for (int i = 0; i < 5; i++) {
                 try {
                     Thread.sleep(10);
@@ -176,12 +165,10 @@ public class ReportProcessorEndToEndTests {
                     createFile(filePath(folderPath1), fileContent1);
                 }
             }
-            // stop
-            reportProcessor.shutdown();
         });
 
         // create files in folder 2
-        executorService.submit(() -> {
+        var folder2Future = executorService.submit(() -> {
             for (int i = 0; i < 5; i++) {
                 try {
                     Thread.sleep(7);
@@ -192,6 +179,12 @@ public class ReportProcessorEndToEndTests {
                 }
             }
         });
+
+        // wait for file creation to finish
+        folder1Future.get();
+        folder2Future.get();
+        // stop
+        reportProcessor.shutdown();
 
         // then
         // verify stopped
@@ -204,8 +197,8 @@ public class ReportProcessorEndToEndTests {
         assertEquals(25, xmlParsingReportHandler2.getUniqueFilesCount());
         assertEquals(125, xmlParsingReportHandler2.getTestcaseCount());
 
-        assertEquals(25, xmlParsingReportHandler2.getUniqueFilesCount());
-        assertEquals(125, xmlParsingReportHandler2.getTestcaseCount());
+        assertEquals(25, xmlParsingReportHandler3.getUniqueFilesCount());
+        assertEquals(125, xmlParsingReportHandler3.getTestcaseCount());
 
         for (var handler : handlers) {
             assertEquals(50, handler.getUniqueFilesCount());

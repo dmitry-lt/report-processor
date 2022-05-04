@@ -2,8 +2,6 @@ package report.processor.impl;
 
 import org.junit.jupiter.api.Test;
 import report.processor.FileInfo;
-import report.processor.impl.FileSystemHelper;
-import report.processor.impl.MonitoredFolder;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -11,6 +9,7 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import static java.time.Instant.EPOCH;
 import static java.time.Instant.now;
@@ -21,12 +20,12 @@ public class MonitoredFolderUnitTests {
         public ArrayList<FileInfo> fileInfos = new ArrayList<>();
 
         @Override
-        public Collection<FileInfo> getFileInfos(Path folder) {
+        public Collection<FileInfo> getFileInfos(Path folder, Predicate<Path> filePathFilter) {
             return fileInfos;
         }
     }
 
-    private FakeFileSystemHelper fileInfoProvider() {
+    private FakeFileSystemHelper fileSystemHelper() {
         return new FakeFileSystemHelper();
     }
 
@@ -41,17 +40,17 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenCreateXmlFile_thenGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(now()), FileTime.from(EPOCH)));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(monitoredChanges, changes);
     }
@@ -59,17 +58,17 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenModifyXmlFile_thenGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(EPOCH), FileTime.from(now())));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(monitoredChanges, changes);
     }
@@ -77,17 +76,17 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenXmlFileChangeInThePast_thenDontGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(EPOCH), FileTime.from(EPOCH)));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -95,23 +94,23 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenDeleteXmlFile_thenDontGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(now()), FileTime.from(EPOCH)));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(monitoredChanges, changes);
 
         // delete XML file
-        fileInfoProvider.fileInfos.clear();
+        fileSystemHelper.fileInfos.clear();
 
         // then
-        changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -119,17 +118,17 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenCreateNonXmlFile_thenDontGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.txt"), FileTime.from(now()), FileTime.from(EPOCH)));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -151,17 +150,17 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenSubsequentlyGetMonitoredChanges_thenGetEmptyMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(now()), FileTime.from(EPOCH)));
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         assertEquals(monitoredChanges, changes);
-        changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
 
         // then
         // assert changes are as expected
@@ -171,7 +170,7 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenSubsequentlyCreateXmlFile_thenGetMonitoredChanges() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         var creationTime = now();
@@ -179,19 +178,19 @@ public class MonitoredFolderUnitTests {
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(monitoredChanges, changes);
 
         // delete and re-create file
         monitoredChanges.clear();
         monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(creationTime.plusMillis(1)), FileTime.from(EPOCH)));
-        fileInfoProvider.fileInfos.clear();
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.clear();
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
 
         // then
-        changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(monitoredChanges, changes);
     }
@@ -199,7 +198,7 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenIncreaseStartTime_thenDontHandlePastEvents() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         var creationTime = now();
@@ -207,12 +206,12 @@ public class MonitoredFolderUnitTests {
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
         // increase start time
         monitoredFolder.limitMonitoringStartTime(creationTime.plusMillis(1));
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -220,7 +219,7 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenDecreaseStopTime_thenDontHandleFutureEvents() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         var creationTime = now();
@@ -228,12 +227,12 @@ public class MonitoredFolderUnitTests {
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
         // decrease stop time
         monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(1));
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -241,7 +240,7 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenDecreaseStartTime_thenStillDontHandlePastEvents() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         var creationTime = now();
@@ -249,12 +248,12 @@ public class MonitoredFolderUnitTests {
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
         // decrease start time
         monitoredFolder.limitMonitoringStartTime(creationTime.minusMillis(1));
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }
@@ -262,7 +261,7 @@ public class MonitoredFolderUnitTests {
     @Test
     public void givenMonitoredFolder_whenDecreaseStartTime_thenStillDontHandleFutureEvents() {
         // given
-        var fileInfoProvider = fileInfoProvider();
+        var fileSystemHelper = fileSystemHelper();
         var monitoredFolder = monitoredFolder();
         var monitoredChanges = new ArrayList<FileInfo>();
         var creationTime = now();
@@ -270,14 +269,14 @@ public class MonitoredFolderUnitTests {
 
         // when
         // create XML file
-        fileInfoProvider.fileInfos.addAll(monitoredChanges);
+        fileSystemHelper.fileInfos.addAll(monitoredChanges);
         // increase stop time
         monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(1));
         // decrease stop time
         monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(3));
 
         // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileInfoProvider);
+        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         // assert changes are as expected
         assertEquals(0, changes.size());
     }

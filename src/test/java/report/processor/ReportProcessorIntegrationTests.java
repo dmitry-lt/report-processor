@@ -5,9 +5,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.util.UUID;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 
+import static java.time.Instant.EPOCH;
+import static java.time.Instant.now;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -16,13 +18,15 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static report.processor.util.TestUtils.TEMP_FOLDER;
 import static report.processor.util.TestUtils.createFile;
 import static report.processor.util.TestUtils.createFolder;
 import static report.processor.util.TestUtils.deleteFolder;
+import static report.processor.util.TestUtils.filePath;
+import static report.processor.util.TestUtils.folderPath;
+import static report.processor.util.TestUtils.getFileCreationTime;
 
 public class ReportProcessorIntegrationTests {
-    private static final Path testFolder = TEMP_FOLDER.resolve(UUID.randomUUID().toString());
+    private static final Path testFolder = folderPath();
 
     @BeforeAll
     public static void setUp() {
@@ -36,18 +40,6 @@ public class ReportProcessorIntegrationTests {
 
     private final int terminationTimeoutMillis = 1000;
 
-    private Path folderPath() {
-        return testFolder.resolve(UUID.randomUUID().toString());
-    }
-
-    private Path filePath(Path folderPath) {
-        return folderPath.resolve(UUID.randomUUID() + ".xml");
-    }
-
-    private Path filePath(Path folderPath, String fileName) {
-        return folderPath.resolve(fileName + ".xml");
-    }
-
     private String fileContent() {
         return "<?xml version=\"1.0\"?><report></report>";
     }
@@ -59,7 +51,7 @@ public class ReportProcessorIntegrationTests {
     @Test
     public void givenProcessor_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
-        var folderPath = folderPath();
+        var folderPath = folderPath(testFolder);
         var filePath = filePath(folderPath);
         var fileContent = fileContent();
         var reportType = "reportType";
@@ -90,9 +82,9 @@ public class ReportProcessorIntegrationTests {
     @Test
     public void givenProcessorAndMultipleHandlers_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
-        var folderPathA = folderPath();
+        var folderPathA = folderPath(testFolder);
         var filePathA = filePath(folderPathA, "a");
-        var folderPathB = folderPath();
+        var folderPathB = folderPath(testFolder);
         var filePathB1 = filePath(folderPathB, "b1");
         var filePathB2 = filePath(folderPathB, "b2");
         var fileContent = fileContent();
@@ -130,7 +122,7 @@ public class ReportProcessorIntegrationTests {
     @Test
     public void givenProcessorAndMultipleFoldersAndFiles_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
-        var folderPath = folderPath();
+        var folderPath = folderPath(testFolder);
         var filePath = filePath(folderPath);
         var fileContent = fileContent();
         var reportType = "reportType";
@@ -167,10 +159,9 @@ public class ReportProcessorIntegrationTests {
     @Test
     public void givenProcessor_whenRemoveFolder_thenHandleExistingAndDontHandleLaterAddedFiles() throws InterruptedException {
         // given
-        var folderPathA = folderPath();
+        var folderPathA = folderPath(testFolder);
         var filePathA1 = filePath(folderPathA, "a1");
-        var filePathA2 = filePath(folderPathA, "a2");
-        var folderPathB = folderPath();
+        var folderPathB = folderPath(testFolder);
         var filePathB1 = filePath(folderPathB, "b1");
         var filePathB2 = filePath(folderPathB, "b2");
         var fileContent = fileContent();
@@ -194,10 +185,18 @@ public class ReportProcessorIntegrationTests {
         createFile(filePathB1, fileContent);
         // remove folder
         reportProcessor.removeMonitoredFolder(folderPathA);
-        // sleep for one millisecond, because if the file is created the same millisecond, it will be handled
-        Thread.sleep(1);
-        // create XML files
-        createFile(filePathA2, fileContent);
+
+        // create a file in folder A after the folder has been removed from monitoring
+        var folderARemovedTime = now();
+        var fileCreationTime = EPOCH;
+        Path filePathANotToBeHandled = null;
+        while (fileCreationTime.compareTo(folderARemovedTime) <= 0) {
+            filePathANotToBeHandled = filePath(folderPathA);
+            createFile(filePathANotToBeHandled, fileContent);
+            fileCreationTime = getFileCreationTime(filePathANotToBeHandled).toInstant();
+        }
+        var filePathA2 = filePathANotToBeHandled;
+        // create a file in folder B
         createFile(filePathB2, fileContent);
 
         // then
@@ -216,7 +215,7 @@ public class ReportProcessorIntegrationTests {
     @Test
     public void givenProcessor_whenShutdownGracefully_thenHandleAllExistingFiles() throws InterruptedException {
         // given
-        var folderPath = folderPath();
+        var folderPath = folderPath(testFolder);
         var numberOfFiles = 5;
         var fileContent = fileContent();
         var reportType = "reportType";

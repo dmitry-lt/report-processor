@@ -44,8 +44,9 @@ public class ExecutorReportProcessor implements ReportProcessor {
 
     /**
      * Create a new {@code ExecutorReportProcessor}.
-     * @param fileSystemHelper a helper object to get file information from the file system
-     * @param filePathFilter a filter ho monitor only changes in certain files, for example, XML files
+     *
+     * @param fileSystemHelper           a helper object to get file information from the file system
+     * @param filePathFilter             a filter ho monitor only changes in certain files, for example, XML files
      * @param fileMonitoringPeriodMillis delay in milliseconds to scan for file changes
      */
     public ExecutorReportProcessor(FileSystemHelper fileSystemHelper, Predicate<Path> filePathFilter, long fileMonitoringPeriodMillis) {
@@ -151,19 +152,17 @@ public class ExecutorReportProcessor implements ReportProcessor {
         return terminated;
     }
 
-    private Collection<ReportHandlerWrapper> handlersForReportType(String reportType) {
-        return handlers.values().stream().filter(hw -> hw.handlesReportType(reportType)).toList();
+    private Collection<ReportHandlerWrapper> handlersForReportTypes(Collection<String> reportTypes) {
+        return handlers.values().stream().filter(hw -> reportTypes.stream().anyMatch(hw::handlesReportType)).toList();
     }
 
     private void submitFileChanges(MonitoredFolder monitoredFolder) {
         var fileInfos = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         var reportTypes = monitoredFolder.getReportTypes();
-        for (var reportType : reportTypes) {
-            var handlers = handlersForReportType(reportType);
-            for (var fileInfo : fileInfos) {
-                for (var handler : handlers) {
-                    fileHandlerService.submit(() -> handler.handle(fileInfo));
-                }
+        var handlers = handlersForReportTypes(reportTypes);
+        for (var fileInfo : fileInfos) {
+            for (var handler : handlers) {
+                fileHandlerService.submit(() -> handler.handle(fileInfo));
             }
         }
     }
