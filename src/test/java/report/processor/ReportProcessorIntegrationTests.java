@@ -5,11 +5,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 
-import static java.time.Instant.EPOCH;
-import static java.time.Instant.now;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -23,7 +20,6 @@ import static report.processor.util.TestUtils.createFolder;
 import static report.processor.util.TestUtils.deleteFolder;
 import static report.processor.util.TestUtils.filePath;
 import static report.processor.util.TestUtils.folderPath;
-import static report.processor.util.TestUtils.getFileCreationTime;
 
 public class ReportProcessorIntegrationTests {
     private static final Path testFolder = folderPath();
@@ -80,7 +76,7 @@ public class ReportProcessorIntegrationTests {
     }
 
     @Test
-    public void givenProcessorAndMultipleHandlers_whenCreateFile_thenHandleFile() throws InterruptedException {
+    public void givenProcessorAndMultipleFolders_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
         var folderPathA = folderPath(testFolder);
         var filePathA = filePath(folderPathA, "a");
@@ -120,7 +116,7 @@ public class ReportProcessorIntegrationTests {
     }
 
     @Test
-    public void givenProcessorAndMultipleFoldersAndFiles_whenCreateFile_thenHandleFile() throws InterruptedException {
+    public void givenProcessorAndMultipleHandlers_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
         var folderPath = folderPath(testFolder);
         var filePath = filePath(folderPath);
@@ -161,6 +157,7 @@ public class ReportProcessorIntegrationTests {
         // given
         var folderPathA = folderPath(testFolder);
         var filePathA1 = filePath(folderPathA, "a1");
+        var filePathA2 = filePath(folderPathA, "a2");
         var folderPathB = folderPath(testFolder);
         var filePathB1 = filePath(folderPathB, "b1");
         var filePathB2 = filePath(folderPathB, "b2");
@@ -187,15 +184,7 @@ public class ReportProcessorIntegrationTests {
         reportProcessor.removeMonitoredFolder(folderPathA);
 
         // create a file in folder A after the folder has been removed from monitoring
-        var folderARemovedTime = now();
-        var fileCreationTime = EPOCH;
-        Path filePathANotToBeHandled = null;
-        while (fileCreationTime.compareTo(folderARemovedTime) <= 0) {
-            filePathANotToBeHandled = filePath(folderPathA);
-            createFile(filePathANotToBeHandled, fileContent);
-            fileCreationTime = getFileCreationTime(filePathANotToBeHandled).toInstant();
-        }
-        var filePathA2 = filePathANotToBeHandled;
+        createFile(filePathA2, fileContent);
         // create a file in folder B
         createFile(filePathB2, fileContent);
 
@@ -210,61 +199,6 @@ public class ReportProcessorIntegrationTests {
         verify(handler, atLeast(1)).handle(argThat(e -> e.filePath().equals(filePathB2)));
         // verify that files in removed folder are not handled anymore
         verify(handler, never()).handle(argThat(e -> e.filePath().equals(filePathA2)));
-    }
-
-    @Test
-    public void givenProcessor_whenShutdownGracefully_thenHandleAllExistingFiles() throws InterruptedException {
-        // given
-        var folderPath = folderPath(testFolder);
-        var numberOfFiles = 5;
-        var fileContent = fileContent();
-        var reportType = "reportType";
-        var reportProcessor = reportProcessor();
-        var handler1 = mock(ReportHandler.class);
-        var handler2 = mock(ReportHandler.class);
-
-        // when
-        // add folder
-        reportProcessor.addMonitoredFolder(folderPath, reportType);
-        // register handlers
-        reportProcessor.registerHandler(handler1, reportType);
-        reportProcessor.registerHandler(handler2, reportType);
-        // start
-        reportProcessor.start();
-        // create folder
-        createFolder(folderPath);
-
-        // make handlers busy processing the first file
-        var latch = new CountDownLatch(1);
-        doAnswer(invocation -> {
-            latch.await();
-            return null;
-        }).when(handler1).handle(any());
-        doAnswer(invocation -> {
-            latch.await();
-            return null;
-        }).when(handler2).handle(any());
-
-        // create XML files
-        for (int i = 0; i < numberOfFiles; i++) {
-            createFile(filePath(folderPath, String.valueOf(i)), fileContent);
-        }
-
-        // finish processing the first file
-        latch.countDown();
-
-        // stop
-        reportProcessor.shutdown();
-        // verify stopped
-        assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
-
-        // then
-        // verify that all files were handled by all handlers
-        for (int i = 0; i < numberOfFiles; i++) {
-            var iString = String.valueOf(i);
-            verify(handler1, atLeast(1)).handle(argThat(e -> e.filePath().equals(filePath(folderPath, iString))));
-            verify(handler2, atLeast(1)).handle(argThat(e -> e.filePath().equals(filePath(folderPath, iString))));
-        }
     }
 
 }

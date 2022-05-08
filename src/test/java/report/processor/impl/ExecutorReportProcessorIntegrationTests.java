@@ -50,6 +50,10 @@ public class ExecutorReportProcessorIntegrationTests {
         }
     }
 
+    private int numberOfFiles() {
+        return Runtime.getRuntime().availableProcessors();
+    }
+
     @Test
     public void givenProcessor_whenCreateFile_thenHandleFile() throws InterruptedException {
         // given
@@ -208,6 +212,47 @@ public class ExecutorReportProcessorIntegrationTests {
     }
 
     @Test
+    public void givenProcessor_whenUnregisterHandler_thenDontHandleQueuedFiles() throws InterruptedException {
+        // given
+        var folderPath = folderPath();
+        var reportType = "reportType";
+        var fileSystemHelper = fileSystemHelper();
+        var reportProcessor = reportProcessor(fileSystemHelper);
+
+        var invocationCount = new AtomicInteger();
+        var handler = mock(ReportHandler.class);
+        doAnswer(invocation -> {
+            invocationCount.incrementAndGet();
+            // unregister handler after the first usage
+            reportProcessor.unregisterHandler(handler);
+            return null;
+        }).when(handler).handle(any());
+
+        // when
+        // add folder
+        reportProcessor.addMonitoredFolder(folderPath, reportType);
+        // register handlers
+        reportProcessor.registerHandler(handler, reportType);
+        // start
+        reportProcessor.start();
+        // create XML files
+        int numberOfFiles = numberOfFiles();
+        for (var i = 0; i < numberOfFiles; i++) {
+            fileSystemHelper.fileInfos.add(new FileInfo(filePath(folderPath), FileTime.from(now()), FileTime.from(now())));
+        }
+
+        // then
+        // stop
+        reportProcessor.shutdown();
+        // verify stopped
+        assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
+        // verify that some but not all files were handled
+        var handled = invocationCount.get();
+        assertTrue(handled > 0);
+        assertTrue(handled < numberOfFiles);
+    }
+
+    @Test
     public void givenProcessor_whenShutdownGracefully_thenHandleAllExistingFiles() throws InterruptedException {
         // given
         var folderPath = folderPath();
@@ -222,11 +267,11 @@ public class ExecutorReportProcessorIntegrationTests {
         // make handler busy processing the first file
         var latch = new CountDownLatch(1);
 
-        var processedFilesCount = new AtomicInteger();
+        var invocationCount = new AtomicInteger();
         var handler = mock(ReportHandler.class);
         doAnswer(invocation -> {
+            invocationCount.incrementAndGet();
             latch.await();
-            processedFilesCount.incrementAndGet();
             return null;
         }).when(handler).handle(any());
 
@@ -236,24 +281,24 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML files
-        int numberOfFiles = 10;
+        int numberOfFiles = numberOfFiles();
         for (int i = 0; i < numberOfFiles; i++) {
             var filePath = filePath(folderPath, String.valueOf(i));
             fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
         }
 
-        // finish processing the first file
-        latch.countDown();
-
         // then
         // shutdown gracefully
         reportProcessor.shutdown();
-        // verify that not all files have been handled by all handlers yet
-        assertTrue(numberOfFiles > processedFilesCount.get());
+        // verify that not all files have been handled after shutdown
+        var handledAfterShutdown = invocationCount.get();
+        assertTrue(handledAfterShutdown < numberOfFiles);
+        // finish awaited file handling
+        latch.countDown();
         // verify stopped
         assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
-        // verify that all files were handled by all handlers
-        assertEquals(numberOfFiles, processedFilesCount.get());
+        // verify that all files were handled after termination
+        assertEquals(numberOfFiles, invocationCount.get());
     }
 
     @Test
@@ -271,11 +316,11 @@ public class ExecutorReportProcessorIntegrationTests {
         // make handler busy processing the first file
         var latch = new CountDownLatch(1);
 
-        var processedFilesCount = new AtomicInteger();
+        var invocationCount = new AtomicInteger();
         var handler = mock(ReportHandler.class);
         doAnswer(invocation -> {
+            invocationCount.incrementAndGet();
             latch.await();
-            processedFilesCount.incrementAndGet();
             return null;
         }).when(handler).handle(any());
 
@@ -285,24 +330,23 @@ public class ExecutorReportProcessorIntegrationTests {
         // start
         reportProcessor.start();
         // create XML files
-        int numberOfFiles = 10;
+        int numberOfFiles = numberOfFiles();
         for (int i = 0; i < numberOfFiles; i++) {
             var filePath = filePath(folderPath, String.valueOf(i));
             fileSystemHelper.fileInfos.add(new FileInfo(filePath, FileTime.from(now()), FileTime.from(now())));
         }
 
-        // finish processing the first file
-        latch.countDown();
-
         // then
         // force shutdown
         reportProcessor.shutdownNow();
-        var processFilesCountAfterShutdown = processedFilesCount.get();
-        // verify that not all files were handled by all handlers
-        assertTrue(processFilesCountAfterShutdown < numberOfFiles);
+        // verify that not all files have been handled after shutdown
+        var handledAfterShutdown = invocationCount.get();
+        assertTrue(handledAfterShutdown < numberOfFiles);
+        // finish awaited file handling
+        latch.countDown();
         // verify stopped
         assertTrue(reportProcessor.awaitTerminationMillis(terminationTimeoutMillis));
-        // verify that no files were handled from forced shutdown until termination
-        assertEquals(processFilesCountAfterShutdown, processedFilesCount.get());
+        // verify that no new files were handled between forced shutdown and termination
+        assertEquals(handledAfterShutdown, invocationCount.get());
     }
 }

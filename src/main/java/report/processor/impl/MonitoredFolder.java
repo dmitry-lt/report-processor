@@ -27,7 +27,6 @@ class MonitoredFolder {
     private final Set<String> reportTypes;
 
     private volatile FileTime monitoringStartTime;
-    private volatile FileTime monitoringStopTime = FileTime.from(Instant.MAX);
 
     /**
      * Create a new monitored folder.
@@ -65,26 +64,13 @@ class MonitoredFolder {
         }
     }
 
-    /**
-     * Sets the new monitoring stop time if it is earlier than the old one
-     *
-     * @param stopTime new monitoring stop time
-     */
-    public void limitMonitoringStopTime(Instant stopTime) {
-        var newTime = FileTime.from(stopTime);
-        if (this.monitoringStopTime.compareTo(newTime) > 0) {
-            this.monitoringStopTime = newTime;
-        }
-    }
-
     private boolean isTimeInMonitoredWindow(FileTime time) {
-        return time.compareTo(monitoringStartTime) >= 0
-                && time.compareTo(monitoringStopTime) <= 0;
+        return time.compareTo(monitoringStartTime) >= 0;
     }
 
     private boolean isInMonitoredWindow(FileInfo fileInfo) {
-        logger.finest("checking if file creation or modification time is in monitored window: %s or %s in [%s, %s]"
-                .formatted(fileInfo.creationTime(), fileInfo.modificationTime(), monitoringStartTime, monitoringStopTime));
+        logger.finest("checking if file creation or modification time is in monitored window: %s or %s >= %s"
+                .formatted(fileInfo.creationTime(), fileInfo.modificationTime(), monitoringStartTime));
         return isTimeInMonitoredWindow(fileInfo.creationTime()) || isTimeInMonitoredWindow(fileInfo.modificationTime());
     }
 
@@ -94,7 +80,7 @@ class MonitoredFolder {
      * @param fileSystemHelper a helper object to get file information from the file system
      * @return new monitored changes
      */
-    public Collection<FileInfo> getNewMonitoredChanges(FileSystemHelper fileSystemHelper) {
+    public synchronized Collection<FileInfo> getNewMonitoredChanges(FileSystemHelper fileSystemHelper) {
         var monitoredChanges = new ArrayList<FileInfo>();
         var newFileInfos = fileSystemHelper.getFileInfos(folderPath, filePathFilter);
         var newFileInfosMap = new HashMap<Path, FileInfo>();
