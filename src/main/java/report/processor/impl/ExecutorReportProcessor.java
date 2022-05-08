@@ -5,6 +5,8 @@ import report.processor.ReportProcessor;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,6 +16,8 @@ import java.util.function.Predicate;
 import java.util.logging.Logger;
 
 import static java.time.Instant.now;
+import static java.util.Collections.emptySet;
+import static java.util.Collections.synchronizedSet;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
@@ -25,7 +29,7 @@ public class ExecutorReportProcessor implements ReportProcessor {
     private final long fileMonitoringPeriodMillis;
 
     private final ConcurrentHashMap<Path, MonitoredFolder> monitoredFolders = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<ReportHandler, ReportHandlerWrapper> handlers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<ReportHandler>> handlers = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService fileWatcherScheduler = defaultFileWatcherScheduler();
     private final ExecutorService fileHandlerService = defaultFileHandlerService();
@@ -68,13 +72,11 @@ public class ExecutorReportProcessor implements ReportProcessor {
 
     @Override
     public boolean removeMonitoredFolder(Path folderPath) {
-        var monitoringInfo = monitoredFolders.remove(folderPath);
-        if (null != monitoringInfo) {
-            var stopTime = now();
-            monitoringInfo.limitMonitoringStopTime(stopTime);
+        var monitoredFolder = monitoredFolders.remove(folderPath);
+        if (null != monitoredFolder) {
             // finish file processing in the removed folder
-            fileWatcherScheduler.submit(() -> submitFileChanges(monitoringInfo));
-            logger.fine("monitored folder removed: %s %s".formatted(stopTime, folderPath));
+            submitFileChanges(monitoredFolder);
+            logger.fine("monitored folder removed: %s".formatted(folderPath));
             return true;
         } else {
             logger.fine("monitored folder not removed: %s".formatted(folderPath));
@@ -83,27 +85,26 @@ public class ExecutorReportProcessor implements ReportProcessor {
     }
 
     @Override
-    public boolean registerHandler(ReportHandler handler, String... reportTypes) {
-        if (null == handlers.putIfAbsent(handler, new ReportHandlerWrapper(handler, reportTypes))) {
-            logger.fine("handler registered: %s %s".formatted(handler, String.join(", ", reportTypes)));
-            return true;
-        } else {
-            logger.fine("handler not registered: %s".formatted(handler));
-            return false;
+    public synchronized boolean registerHandler(ReportHandler handler, String... reportTypes) {
+        logger.fine("registering handler: %s %s".formatted(handler, String.join(", ", reportTypes)));
+        var handlerRegistered = true;
+        for (var reportType : reportTypes) {
+            if (!handlers.containsKey(reportType)) {
+                handlers.put(reportType, synchronizedSet(new HashSet<>()));
+            }
+            handlerRegistered &= handlers.get(reportType).add(handler);
         }
+        return handlerRegistered;
     }
 
     @Override
-    public boolean unregisterHandler(ReportHandler handler) {
-        var handlerWrapper = handlers.remove(handler);
-        if (null != handlerWrapper) {
-            handlerWrapper.markUnregistered();
-            logger.fine("handler unregistered: %s".formatted(handler));
-            return true;
-        } else {
-            logger.fine("handler not unregistered: %s".formatted(handler));
-            return false;
+    public synchronized boolean unregisterHandler(ReportHandler handler) {
+        logger.fine("unregistering handler: %s".formatted(handler));
+        var handlerUnregistered = false;
+        for (var handlerSet : handlers.values()) {
+            handlerUnregistered |= handlerSet.remove(handler);
         }
+        return handlerUnregistered;
     }
 
     @Override
@@ -121,15 +122,11 @@ public class ExecutorReportProcessor implements ReportProcessor {
     public synchronized void shutdown() {
         if (state == State.RUNNING) {
             state = State.STOPPING_GRACEFULLY;
-            var stopTime = now();
-            monitoredFolders.values().forEach(monitoredFolder -> monitoredFolder.limitMonitoringStopTime(stopTime));
             // finish processing all the existing files
-            fileWatcherScheduler.submit(() -> {
-                submitFileChanges(monitoredFolders.values());
-                fileWatcherScheduler.shutdown();
-                fileHandlerService.shutdown();
-            });
-            logger.fine("processing graceful shutdown started at %s".formatted(stopTime));
+            fileWatcherScheduler.shutdown();
+            submitFileChanges(monitoredFolders.values());
+            fileHandlerService.shutdown();
+            logger.fine("processing graceful shutdown started");
         }
     }
 
@@ -152,17 +149,21 @@ public class ExecutorReportProcessor implements ReportProcessor {
         return terminated;
     }
 
-    private Collection<ReportHandlerWrapper> handlersForReportTypes(Collection<String> reportTypes) {
-        return handlers.values().stream().filter(hw -> reportTypes.stream().anyMatch(hw::handlesReportType)).toList();
-    }
-
     private void submitFileChanges(MonitoredFolder monitoredFolder) {
         var fileInfos = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
         var reportTypes = monitoredFolder.getReportTypes();
-        var handlers = handlersForReportTypes(reportTypes);
+        Set<ReportHandler> currentHandlers = new HashSet<>();
+        for (var reportType : reportTypes) {
+            currentHandlers.addAll(handlers.getOrDefault(reportType, emptySet()));
+        }
         for (var fileInfo : fileInfos) {
-            for (var handler : handlers) {
-                fileHandlerService.submit(() -> handler.handle(fileInfo));
+            for (var handler : currentHandlers) {
+                fileHandlerService.submit(() -> {
+                    // check that the handler is still registered
+                    if (handlers.values().stream().anyMatch(set -> set.contains(handler))) {
+                        handler.handle(fileInfo);
+                    }
+                });
             }
         }
     }

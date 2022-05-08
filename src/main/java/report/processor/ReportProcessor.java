@@ -27,7 +27,7 @@ public interface ReportProcessor {
     boolean removeMonitoredFolder(Path folderPath);
 
     /**
-     * Register a new handler. The same handler  can't be registered twice.
+     * Register a handler.
      *
      * @param handler     handler
      * @param reportTypes associated report types

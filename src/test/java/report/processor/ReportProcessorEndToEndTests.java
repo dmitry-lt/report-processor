@@ -154,35 +154,16 @@ public class ReportProcessorEndToEndTests {
         createFolder(folderPath1);
         createFolder(folderPath2);
 
-        // create files in folder 1 and stop processing
-        var folder1Future = executorService.submit(() -> {
-            for (int i = 0; i < 5; i++) {
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ignored) {
-                }
-                for (int j = 0; j < 5; j++) {
-                    createFile(filePath(folderPath1), fileContent1);
-                }
-            }
-        });
-
-        // create files in folder 2
-        var folder2Future = executorService.submit(() -> {
-            for (int i = 0; i < 5; i++) {
-                try {
-                    Thread.sleep(7);
-                } catch (InterruptedException ignored) {
-                }
-                for (int j = 0; j < 5; j++) {
-                    createFile(filePath(folderPath2), fileContent1);
-                }
+        var fileCreationFuture = executorService.submit(() -> {
+            // create files
+            for (int i = 0; i < 25; i++) {
+                createFile(filePath(folderPath1), fileContent1);
+                createFile(filePath(folderPath2), fileContent1);
             }
         });
 
         // wait for file creation to finish
-        folder1Future.get();
-        folder2Future.get();
+        fileCreationFuture.get();
         // stop
         reportProcessor.shutdown();
 

@@ -217,27 +217,6 @@ public class MonitoredFolderUnitTests {
     }
 
     @Test
-    public void givenMonitoredFolder_whenDecreaseStopTime_thenDontHandleFutureEvents() {
-        // given
-        var fileSystemHelper = fileSystemHelper();
-        var monitoredFolder = monitoredFolder();
-        var monitoredChanges = new ArrayList<FileInfo>();
-        var creationTime = now();
-        monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(creationTime.plusMillis(2)), FileTime.from(EPOCH)));
-
-        // when
-        // create XML file
-        fileSystemHelper.fileInfos.addAll(monitoredChanges);
-        // decrease stop time
-        monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(1));
-
-        // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
-        // assert changes are as expected
-        assertEquals(0, changes.size());
-    }
-
-    @Test
     public void givenMonitoredFolder_whenDecreaseStartTime_thenStillDontHandlePastEvents() {
         // given
         var fileSystemHelper = fileSystemHelper();
@@ -251,29 +230,6 @@ public class MonitoredFolderUnitTests {
         fileSystemHelper.fileInfos.addAll(monitoredChanges);
         // decrease start time
         monitoredFolder.limitMonitoringStartTime(creationTime.minusMillis(1));
-
-        // then
-        var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
-        // assert changes are as expected
-        assertEquals(0, changes.size());
-    }
-
-    @Test
-    public void givenMonitoredFolder_whenDecreaseStartTime_thenStillDontHandleFutureEvents() {
-        // given
-        var fileSystemHelper = fileSystemHelper();
-        var monitoredFolder = monitoredFolder();
-        var monitoredChanges = new ArrayList<FileInfo>();
-        var creationTime = now();
-        monitoredChanges.add(new FileInfo(Paths.get("file.xml"), FileTime.from(creationTime.plusMillis(2)), FileTime.from(EPOCH)));
-
-        // when
-        // create XML file
-        fileSystemHelper.fileInfos.addAll(monitoredChanges);
-        // increase stop time
-        monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(1));
-        // decrease stop time
-        monitoredFolder.limitMonitoringStopTime(creationTime.plusMillis(3));
 
         // then
         var changes = monitoredFolder.getNewMonitoredChanges(fileSystemHelper);
